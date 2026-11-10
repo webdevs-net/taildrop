@@ -17,16 +17,22 @@ gh pr create
   automatically after merge.
 - **Linear history.** No force pushes, no branch deletion.
 
-## Overriding
+## Who the review rule actually binds
 
-Admins can bypass the review requirement when something has to ship:
+Branch protection is set with `enforce_admins: false`, which means **repo admins bypass the review
+requirement entirely** — an admin merge goes through unreviewed without even passing a flag. The
+requirement is real for everyone else.
+
+GitHub offers no middle setting on this plan: either admins are exempt, or they are bound and
+cannot override at all. We chose exempt, so the owner can ship without waiting.
+
+If you are an admin, that makes the review rule a convention you are keeping rather than one being
+enforced on you. Get a second pair of eyes on anything that touches sharing, tokens or the server
+side, even though nothing will stop you.
 
 ```bash
-gh pr merge <n> --squash --admin
+gh pr merge <n> --squash --admin    # explicit override; harmless but redundant for admins
 ```
-
-That is an override, not the normal path — it merges unreviewed code. Use it when the alternative
-is worse, and say so in the PR.
 
 ## Before you open one
 
