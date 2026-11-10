@@ -38,14 +38,14 @@ for spec in "16:16x16" "32:16x16@2x" "32:32x32" "64:32x32@2x" \
             "128:128x128" "256:128x128@2x" "256:256x256" "512:256x256@2x" \
             "512:512x512" "1024:512x512@2x"; do
   px="${spec%%:*}"; name="${spec##*:}"
-  render "$SRC/logo-i-drop-corner.svg" "$px" "$ICONSET/icon_$name.png"
+  render "$SRC/logo-taildrop.svg" "$px" "$ICONSET/icon_$name.png"
 done
 iconutil -c icns "$ICONSET" -o "$OUT/TailDrop.icns"
 
 # --- menu bar ------------------------------------------------------------
 # Black, flat, transparent: macOS tints template images itself, so this one
 # follows the menu bar through light and dark.
-render "$SRC/logo-i2-drop-corner-ink.svg" 18 "$OUT/menubar.png" 0
-render "$SRC/logo-i2-drop-corner-ink.svg" 36 "$OUT/menubar@2x.png" 0
+render "$SRC/logo-taildrop-ink.svg" 18 "$OUT/menubar.png" 0
+render "$SRC/logo-taildrop-ink.svg" 36 "$OUT/menubar@2x.png" 0
 
 echo "$OUT/TailDrop.icns"

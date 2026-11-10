@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="TailDrop">
+  <title>TailDrop — hexagons, flat top, ink</title>
+  <!-- Same grid geometry as before (centres 80/128/176, circumradius 16, four
+       solid and five faded) with hexagons in place of circles. -->
+  <defs>
+    <path id="d" d="M186 140 C186 140 216 174 216 194 A30 30 0 1 1 156 194 C156 174 186 140 186 140 Z"/>
+    <mask id="g">
+      <rect width="256" height="256" fill="#fff"/>
+      <use href="#d" fill="#000" stroke="#000" stroke-width="16" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g mask="url(#g)">
+  <g fill="#1A1A1A">
+    <polygon points="96.0,128.0 88.0,141.9 72.0,141.9 64.0,128.0 72.0,114.1 88.0,114.1"/>
+    <polygon points="144.0,128.0 136.0,141.9 120.0,141.9 112.0,128.0 120.0,114.1 136.0,114.1"/>
+    <polygon points="192.0,128.0 184.0,141.9 168.0,141.9 160.0,128.0 168.0,114.1 184.0,114.1"/>
+    <polygon points="144.0,176.0 136.0,189.9 120.0,189.9 112.0,176.0 120.0,162.1 136.0,162.1"/>
+  </g>
+  <g fill="#1A1A1A" opacity=".3">
+    <polygon points="96.0,80.0 88.0,93.9 72.0,93.9 64.0,80.0 72.0,66.1 88.0,66.1"/>
+    <polygon points="144.0,80.0 136.0,93.9 120.0,93.9 112.0,80.0 120.0,66.1 136.0,66.1"/>
+    <polygon points="192.0,80.0 184.0,93.9 168.0,93.9 160.0,80.0 168.0,66.1 184.0,66.1"/>
+    <polygon points="96.0,176.0 88.0,189.9 72.0,189.9 64.0,176.0 72.0,162.1 88.0,162.1"/>
+  </g>
+  </g>
+  <use href="#d" fill="#1A1A1A"/>
+</svg>

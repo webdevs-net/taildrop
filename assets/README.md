@@ -1,28 +1,20 @@
 # Marks
 
-Proportions are taken from Tailscale's own mark (their favicon): a 3×3 grid at 15/24/33 with r=3 on
-a 48 canvas — dots a radius apart, not the looser grid they're often drawn as. Four dots form the
-"t" (middle row plus one below centre) and the other five sit at 30% opacity behind. Scaled ×16/3
-here, so centres land on 80/128/176 with r=16.
+`logo-taildrop.svg` is the mark; `logo-taildrop-ink.svg` is the monochrome twin used for the menu
+bar, where macOS tints template images itself.
 
-| File | Idea |
-|---|---|
-| `logo-g-drop-stem.svg` | The droplet *is* the stem of the "t" — the mark reads as itself and as a drop |
-| `logo-h-drop-in-front.svg` | Droplet floating in front of the whole mark, knocked out with an even gap |
-| `logo-i-drop-corner.svg` | Droplet over the lower-right, mark left almost intact |
-| `logo-k-corner-behind.svg` | Same corner, but the drop sits *behind* the grid |
-| `*-ink.svg` | Same shapes in ink rather than blue, for menu bars and monochrome use |
-| `reference-tailscale-proportions.svg` | The measured grid alone, for checking proportions |
+A 3×3 grid of flat-top hexagons — centres at 80/128/176, circumradius 16 — with four solid and five
+at 30% opacity, and a droplet overlapping the lower right. The spacing comes from how a tailnet mark
+reads at small sizes: nodes about a radius apart, so the grid stays a grid down to 16px.
 
-`logo-i-drop-corner.svg` and its ink twin are the chosen marks.
+Where the droplet would clip a hexagon, that hexagon is left out entirely rather than shaved into a
+sliver, and the gap around the droplet is the same path stroked, so clear space stays even at any
+size.
 
-Putting the drop behind the whole mark was tried and dropped: the faded dots sit at 30% grey, so
-over a filled droplet they turn muddy and the whole thing reads as a blob below about 48px. In
-front, the knockout gap keeps both shapes legible.
+`logo-hex-pointy.svg` and its ink twin are the point-up alternative, kept for reference.
+`logo-i-drop-corner.svg` is the earlier circular version.
 
-Where a droplet would clip a dot, that dot is left out entirely rather than shaved into a sliver.
-The gap around each droplet is the same path stroked, so clear space stays even at any size.
+Icons are generated from these by `make-icons.sh`, which renders every size and packs the `.icns`.
 
-**Trademark:** these deliberately echo Tailscale's mark. Fine for an internal tool; if TailDrop ever
-ships publicly, the grid should be redrawn far enough away that nobody mistakes it for a Tailscale
-product, or permission sought.
+**Not affiliated with Tailscale.** The mark is an independent design and Tailscale is not involved
+in this project.
