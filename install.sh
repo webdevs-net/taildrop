@@ -35,8 +35,12 @@ PLISTEOF
 launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$UID" "$PLIST"
 
-"$SRC/make-quick-action.sh" "Send by Tailnet" "$SRC/actions/send-by-tailnet.sh"
-"$SRC/make-quick-action.sh" "Stop Tailnet Shares" "$SRC/actions/stop-tailnet-shares.sh"
+# Remove the pre-rename items so Finder does not show both.
+rm -rf "$HOME/Library/Services/Send by Tailnet.workflow" \
+       "$HOME/Library/Services/Stop Tailnet Shares.workflow"
+
+"$SRC/make-quick-action.sh" "Send with TailDrop" "$SRC/actions/send-with-taildrop.sh"
+"$SRC/make-quick-action.sh" "Revoke TailDrop Links" "$SRC/actions/revoke-taildrop-links.sh"
 /System/Library/CoreServices/pbs -flush >/dev/null 2>&1 || true
 
 echo "Installed. CLI: $APP/bin/tnshare"
