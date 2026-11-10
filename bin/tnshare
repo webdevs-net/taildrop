@@ -14,6 +14,10 @@ MAX_BYTES="${TNSHARE_MAX_BYTES:-5368709120}"   # 5 GiB ceiling for the share sto
 [[ -f "$HOME/.config/taildrop/config" ]] && . "$HOME/.config/taildrop/config"
 HOST_NODE="${TNSHARE_HOST:-${TAILDROP_HOST:-}}"
 HOST_SSH="${TNSHARE_HOST_SSH:-${TAILDROP_HOST_SSH:-}}"
+HOST_KEY="${TAILDROP_HOST_KEY:-$HOME/.ssh/taildrop_ed25519}"
+# The remote account is unprivileged; it may only run the share helper as root.
+SSH_OPTS=(-o ConnectTimeout=10 -o IdentitiesOnly=yes -i "$HOST_KEY")
+HOST_HELPER="sudo -n /usr/local/bin/tnshare-host"
 HOST_ROOT=/srv/drop/shares
 HOSTED="$ROOT/hosted"
 LABEL=net.webdevs.tnshared
@@ -164,7 +168,7 @@ cmd_add_hosted() {
   local ttl="$1"; shift
   [[ -n "$HOST_SSH" ]] || die "hosted sharing needs TAILDROP_HOST_SSH in ~/.config/taildrop/config (see config.example)"
   local host_dns urls=()
-  host_dns="$(ssh -o ConnectTimeout=10 "$HOST_SSH" \
+  host_dns="$(ssh "${SSH_OPTS[@]}" "$HOST_SSH" \
     'tailscale status --json | python3 -c "import json,sys;print(json.load(sys.stdin)[\"Self\"][\"DNSName\"].rstrip(\".\"))"')" \
     || die "cannot reach $HOST_NODE over ssh"
 
@@ -175,12 +179,12 @@ cmd_add_hosted() {
     name="$(basename "$abs")"
     token="$(openssl rand -hex 12)"
 
-    ssh -o ConnectTimeout=10 "$HOST_SSH" "mkdir -p '$HOST_ROOT/$token'" \
+    ssh "${SSH_OPTS[@]}" "$HOST_SSH" "mkdir -p '$HOST_ROOT/$token'" \
       || die "could not create remote share dir"
     echo "uploading $name to $HOST_NODE..." >&2
-    scp -q -r "$abs" "$HOST_SSH:$HOST_ROOT/$token/" || die "upload failed"
-    ssh -o ConnectTimeout=10 "$HOST_SSH" \
-      "tnshare-host publish '$token' '$name' '$ttl'" >/dev/null \
+    scp -q -r -i "$HOST_KEY" -o IdentitiesOnly=yes "$abs" "$HOST_SSH:$HOST_ROOT/$token/" || die "upload failed"
+    ssh "${SSH_OPTS[@]}" "$HOST_SSH" \
+      "$HOST_HELPER publish '$token' '$name' '$ttl'" >/dev/null \
       || die "remote publish failed"
 
     local url
@@ -294,7 +298,7 @@ cmd_stop() {
   [[ $# -ge 1 ]] || die "usage: tnshare stop TOKEN..."
   for t in "$@"; do
     if [[ -d "$HOSTED/$t" ]]; then
-      ssh -o ConnectTimeout=10 "$HOST_SSH" "tnshare-host expire '$t'" >/dev/null 2>&1 \
+      ssh "${SSH_OPTS[@]}" "$HOST_SSH" "$HOST_HELPER expire '$t'" >/dev/null 2>&1 \
         || echo "tnshare: could not reach $HOST_NODE; local record removed only" >&2
       rm -rf "${HOSTED:?}/$t"
     fi
@@ -328,10 +332,10 @@ PY
   stop) shift; cmd_stop "$@" ;;
   stop-all) cmd_stop_all ;;
   url) shift; cmd_add "$@" ;;
-  hosted) shift; cmd_add_hosted "$DEFAULT_TTL" "$@" ;;
-  hosted-list) ssh -o ConnectTimeout=10 "$HOST_SSH" "tnshare-host list" ;;
-  hosted-stop) shift; for t in "$@"; do ssh -o ConnectTimeout=10 "$HOST_SSH" "tnshare-host expire '$t'"; done ;;
-  hosted-stop-all) ssh -o ConnectTimeout=10 "$HOST_SSH" "tnshare-host stop-all" ;;
+  hosted) shift; cmd_add --hosted "$@" ;;
+  hosted-list) ssh "${SSH_OPTS[@]}" "$HOST_SSH" "$HOST_HELPER list" ;;
+  hosted-stop) shift; for t in "$@"; do ssh "${SSH_OPTS[@]}" "$HOST_SSH" "$HOST_HELPER expire '$t'"; done ;;
+  hosted-stop-all) ssh "${SSH_OPTS[@]}" "$HOST_SSH" "$HOST_HELPER stop-all" ;;
   *) echo "usage: tnshare {add [--ttl S] [--hosted] FILE...|list|stop TOKEN...|stop-all
                  hosted FILE...|hosted-list|hosted-stop TOKEN...|hosted-stop-all}" >&2; exit 2 ;;
 esac

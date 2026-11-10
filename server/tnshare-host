@@ -17,6 +17,7 @@ cmd_publish() {
   local dir="$ROOT/$token"
   [[ -f "$dir/$name" || -d "$dir/$name" ]] || die "nothing uploaded at $dir/$name"
 
+  chown -R root:root "$dir"
   chmod -R go-w "$dir"
   "$TS" serve --bg --set-path="/$token" "$dir" >/dev/null || die "serve failed"
 

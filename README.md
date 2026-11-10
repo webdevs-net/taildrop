@@ -62,8 +62,31 @@ app/build-app.sh      # builds app/build/TailDrop.app
 ```
 
 `install.sh` puts the CLI in `~/Library/Application Support/TailnetShare/bin/`, symlinks it into
-`~/.local/bin`, loads the LaunchAgent, and installs the Quick Actions. The hosted side needs
-`server/tnshare-host` at `/usr/local/bin/tnshare-host` on the server, reachable over SSH.
+`~/.local/bin`, loads the LaunchAgent, and installs the Quick Actions.
+
+### Hosted server
+
+Install `server/tnshare-host` at `/usr/local/bin/tnshare-host`, then give it a dedicated,
+unprivileged account rather than sharing out root:
+
+```bash
+useradd --system --home-dir /srv/drop --shell /bin/bash taildrop
+mkdir -p /srv/drop/shares /srv/drop/.ssh
+chown -R taildrop:taildrop /srv/drop/shares /srv/drop/.ssh
+chmod 700 /srv/drop/.ssh
+
+# Restricted key: no port forwarding, agent forwarding, X11 or tunnels.
+printf 'restrict,pty %s\n' "$(cat taildrop_ed25519.pub)" > /srv/drop/.ssh/authorized_keys
+chown taildrop:taildrop /srv/drop/.ssh/authorized_keys && chmod 600 /srv/drop/.ssh/authorized_keys
+
+# The one thing it may do as root.
+printf 'taildrop ALL=(root) NOPASSWD: /usr/local/bin/tnshare-host\n' > /etc/sudoers.d/taildrop
+chmod 440 /etc/sudoers.d/taildrop && visudo -c -f /etc/sudoers.d/taildrop
+```
+
+The account owns only `/srv/drop/shares`, cannot write anywhere else, and any `sudo` beyond
+`tnshare-host` asks for a password it does not have. Publishing still needs root — Tailscale Serve
+and the expiry timer both do — so it goes through that one helper and nothing else.
 
 ## Configuration
 
