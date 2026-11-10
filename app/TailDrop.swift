@@ -57,6 +57,13 @@ enum Destination: String, CaseIterable, Identifiable {
     }
 
     var isPublic: Bool { self == .publicWeb }
+
+    /// Standing caveat worth seeing before you try, not after it fails.
+    var note: String? {
+        self == .publicWeb
+            ? "Needs a paid Tailscale plan and the funnel nodeAttr — refused on Starter."
+            : nil
+    }
 }
 
 // MARK: - tnshare bridge
@@ -250,7 +257,7 @@ struct DropZone: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(targeted ? Color.accentColor.opacity(0.12) : Color.clear)
             )
-            .frame(height: 112)
+            .frame(height: 128)
             .overlay {
                 VStack(spacing: 6) {
                     Image(systemName: store.busy ? "arrow.triangle.2.circlepath" : "arrow.down.doc")
@@ -263,6 +270,14 @@ struct DropZone: View {
                         .foregroundStyle(store.destination.isPublic ? Color.orange : Color.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 14)
+
+                    if let note = store.destination.note {
+                        Text(note)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 14)
+                    }
                 }
             }
             .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
