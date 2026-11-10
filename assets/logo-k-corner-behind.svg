@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="TailDrop">
+  <title>TailDrop — drop behind the corner</title>
+  <!-- Proportions measured from Tailscale's mark. Droplet behind the grid:
+       the dots sit on top of it, so the drop shows only where the grid is not. -->
+  <path d="M186 128 C186 128 222 170 222 194 A36 36 0 1 1 150 194 C150 170 186 128 186 128 Z" fill="#2F6FED"/>
+  <g fill="#1A1A1A">
+    <circle cx="80" cy="128" r="16"/>
+    <circle cx="128" cy="128" r="16"/>
+    <circle cx="176" cy="128" r="16"/>
+    <circle cx="128" cy="176" r="16"/>
+  </g>
+  <g fill="#1A1A1A" opacity=".3">
+    <circle cx="80" cy="80" r="16"/>
+    <circle cx="128" cy="80" r="16"/>
+    <circle cx="176" cy="80" r="16"/>
+    <circle cx="80" cy="176" r="16"/>
+    <circle cx="176" cy="176" r="16"/>
+  </g>
+</svg>

@@ -10,8 +10,15 @@ here, so centres land on 80/128/176 with r=16.
 | `logo-g-drop-stem.svg` | The droplet *is* the stem of the "t" — the mark reads as itself and as a drop |
 | `logo-h-drop-in-front.svg` | Droplet floating in front of the whole mark, knocked out with an even gap |
 | `logo-i-drop-corner.svg` | Droplet over the lower-right, mark left almost intact |
+| `logo-k-corner-behind.svg` | Same corner, but the drop sits *behind* the grid |
 | `*-ink.svg` | Same shapes in ink rather than blue, for menu bars and monochrome use |
 | `reference-tailscale-proportions.svg` | The measured grid alone, for checking proportions |
+
+`logo-i-drop-corner.svg` and its ink twin are the chosen marks.
+
+Putting the drop behind the whole mark was tried and dropped: the faded dots sit at 30% grey, so
+over a filled droplet they turn muddy and the whole thing reads as a blob below about 48px. In
+front, the knockout gap keeps both shapes legible.
 
 Where a droplet would clip a dot, that dot is left out entirely rather than shaved into a sliver.
 The gap around each droplet is the same path stroked, so clear space stays even at any size.
