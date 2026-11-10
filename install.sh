@@ -13,6 +13,16 @@ install -m 755 "$SRC/bin/tnshare" "$SRC/bin/tnshared.py" "$APP/bin/"
 mkdir -p "$HOME/.local/bin"
 ln -sf "$APP/bin/tnshare" "$HOME/.local/bin/tnshare"
 
+# Seed the config so Team and Public sharing fail with "fill this in" rather
+# than an unexplained missing-variable error on first use.
+CONFIG="$HOME/.config/taildrop/config"
+if [[ ! -f "$CONFIG" ]]; then
+  mkdir -p "$(dirname "$CONFIG")"
+  cp "$SRC/config.example" "$CONFIG"
+  chmod 600 "$CONFIG"
+  echo "Created $CONFIG — set your server before using Team or Public sharing."
+fi
+
 cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
