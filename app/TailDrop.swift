@@ -420,6 +420,14 @@ struct ContentView: View {
                     .font(.caption)
                 }
             }
+
+            HStack {
+                Spacer()
+                Link("Built by WebDevs", destination: URL(string: "https://webdevs.net")!)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
         }
         .padding(14)
         .frame(width: 380)
