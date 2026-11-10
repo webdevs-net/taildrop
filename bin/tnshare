@@ -9,6 +9,7 @@ PORT="${TNSHARE_PORT:-8731}"
 HTTPS_PORT="${TNSHARE_HTTPS_PORT:-8443}"
 DEFAULT_TTL="${TNSHARE_TTL:-86400}"   # 24 hours
 MAX_BYTES="${TNSHARE_MAX_BYTES:-5368709120}"   # 5 GiB ceiling for the share store
+PUBLIC_TTL="${TNSHARE_PUBLIC_TTL:-3600}"       # public links live 1 hour unless told otherwise
 # Hosted shares need a Linux tailnet node you can ssh into. Keep the address out
 # of the repo: set it in ~/.config/taildrop/config or the environment.
 [[ -f "$HOME/.config/taildrop/config" ]] && . "$HOME/.config/taildrop/config"
@@ -110,16 +111,19 @@ PY
 }
 
 cmd_add() {
-  local ttl="$DEFAULT_TTL" hosted=0
+  local ttl="" hosted=0 exposure=tailnet
   while [[ "${1:-}" == --* ]]; do
     case "$1" in
       --ttl) ttl="$2"; shift 2 ;;
       --hosted) hosted=1; shift ;;
+      # Public is never implied: it must be asked for by name.
+      --public) hosted=1; exposure=public; shift ;;
       *) die "unknown option $1" ;;
     esac
   done
-  [[ $# -ge 1 ]] || die "usage: tnshare add [--ttl SECONDS] [--hosted] FILE..."
-  [[ "$hosted" == 1 ]] && { cmd_add_hosted "$ttl" "$@"; return; }
+  [[ $# -ge 1 ]] || die "usage: tnshare add [--ttl SECONDS] [--hosted|--public] FILE..."
+  [[ -z "$ttl" ]] && { [[ "$exposure" == public ]] && ttl="$PUBLIC_TTL" || ttl="$DEFAULT_TTL"; }
+  [[ "$hosted" == 1 ]] && { cmd_add_hosted "$ttl" "$exposure" "$@"; return; }
 
   ensure_serving
   local host; host="$(node_host)"
@@ -165,8 +169,12 @@ PY
 # this Mac is asleep or offline. That node runs real tailscaled, where Tailscale
 # Serve can publish a path directly.
 cmd_add_hosted() {
-  local ttl="$1"; shift
+  local ttl="$1" exposure="${2:-tailnet}"; shift 2
   [[ -n "$HOST_SSH" ]] || die "hosted sharing needs TAILDROP_HOST_SSH in ~/.config/taildrop/config (see config.example)"
+  if [[ "$exposure" == public ]]; then
+    echo "tnshare: PUBLIC link — reachable by anyone on the internet who has the URL." >&2
+    echo "tnshare: the 24-hex token is the only protection; expires in $((ttl / 60)) min." >&2
+  fi
   local host_dns urls=()
   host_dns="$(ssh "${SSH_OPTS[@]}" "$HOST_SSH" \
     'tailscale status --json | python3 -c "import json,sys;print(json.load(sys.stdin)[\"Self\"][\"DNSName\"].rstrip(\".\"))"')" \
@@ -184,17 +192,18 @@ cmd_add_hosted() {
     echo "uploading $name to $HOST_NODE..." >&2
     scp -q -r -i "$HOST_KEY" -o IdentitiesOnly=yes "$abs" "$HOST_SSH:$HOST_ROOT/$token/" || die "upload failed"
     ssh "${SSH_OPTS[@]}" "$HOST_SSH" \
-      "$HOST_HELPER publish '$token' '$name' '$ttl'" >/dev/null \
+      "$HOST_HELPER publish '$token' '$name' '$ttl' '$exposure'" >/dev/null \
       || die "remote publish failed"
 
     local url
     url="https://$host_dns/$token/$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$name")"
     mkdir -p "$HOSTED/$token"
-    python3 - "$HOSTED/$token/meta.json" "$name" "$url" "$ttl" "$HOST_NODE" <<'PY'
+    python3 - "$HOSTED/$token/meta.json" "$name" "$url" "$ttl" "$HOST_NODE" "$exposure" <<'PY'
 import json, sys, time
-meta_path, name, url, ttl, host = sys.argv[1:6]
+meta_path, name, url, ttl, host, exposure = sys.argv[1:7]
 ttl = int(ttl)
-json.dump({"name": name, "url": url, "host": host, "created": time.time(),
+json.dump({"name": name, "url": url, "host": host, "exposure": exposure,
+           "created": time.time(),
            "expires": (time.time() + ttl) if ttl > 0 else 0},
           open(meta_path, "w"))
 PY
@@ -224,6 +233,7 @@ def scan(root, kind):
             host, port, token, urllib.parse.quote(name))
         out.append({"token": token, "name": name, "url": url, "kind": kind,
                     "host": meta.get("host", "this Mac"),
+                    "exposure": meta.get("exposure", "tailnet"),
                     "expires": meta.get("expires") or 0})
     return out
 
@@ -239,7 +249,8 @@ else:
         exp = r["expires"]
         left = ("never" if not exp else "EXPIRED" if exp < time.time()
                 else "%dh%dm" % divmod(int((exp - time.time()) // 60), 60))
-        print("%s  %-8s  %-10s  %s" % (r["token"], r["kind"], left, r["url"]))
+        kind = "PUBLIC" if r.get("exposure") == "public" else r["kind"]
+        print("%s  %-8s  %-10s  %s" % (r["token"], kind, left, r["url"]))
 PY
 }
 
@@ -333,9 +344,10 @@ PY
   stop-all) cmd_stop_all ;;
   url) shift; cmd_add "$@" ;;
   hosted) shift; cmd_add --hosted "$@" ;;
+  public) shift; cmd_add --public "$@" ;;
   hosted-list) ssh "${SSH_OPTS[@]}" "$HOST_SSH" "$HOST_HELPER list" ;;
   hosted-stop) shift; for t in "$@"; do ssh "${SSH_OPTS[@]}" "$HOST_SSH" "$HOST_HELPER expire '$t'"; done ;;
   hosted-stop-all) ssh "${SSH_OPTS[@]}" "$HOST_SSH" "$HOST_HELPER stop-all" ;;
-  *) echo "usage: tnshare {add [--ttl S] [--hosted] FILE...|list|stop TOKEN...|stop-all
+  *) echo "usage: tnshare {add [--ttl S] [--hosted|--public] FILE...|list|stop TOKEN...|stop-all
                  hosted FILE...|hosted-list|hosted-stop TOKEN...|hosted-stop-all}" >&2; exit 2 ;;
 esac

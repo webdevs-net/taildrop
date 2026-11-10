@@ -17,10 +17,12 @@ struct Share: Identifiable, Decodable, Equatable {
     let url: String
     let kind: String      // "local" | "hosted"
     let host: String
+    let exposure: String  // "tailnet" | "public"
     let expires: Double   // unix seconds, 0 = never
 
     var id: String { token }
     var isHosted: Bool { kind == "hosted" }
+    var isPublic: Bool { exposure == "public" }
 
     func timeLeft(now: Date = Date()) -> String {
         guard expires > 0 else { return "no expiry" }
@@ -33,15 +35,28 @@ struct Share: Identifiable, Decodable, Equatable {
 }
 
 enum Destination: String, CaseIterable, Identifiable {
-    case local, hosted
+    case local, hosted, publicWeb
+
     var id: String { rawValue }
 
-    var label: String { self == .local ? "This Mac" : "ovh1" }
-    var blurb: String {
-        self == .local
-            ? "Served from this Mac. No upload, but it dies on sleep and only your own devices may connect — run tnshare doctor."
-            : "Uploaded to ovh1 and served from there. Survives sleep, and reaches people your Mac's ACL blocks."
+    var label: String {
+        switch self {
+        case .local: return "This Mac"
+        case .hosted: return "Team"
+        case .publicWeb: return "Public"
+        }
     }
+
+    /// One line, shown under the picker: who can actually open the link.
+    var blurb: String {
+        switch self {
+        case .local:     return "Your devices only · no upload · needs this Mac awake"
+        case .hosted:    return "Your team on the tailnet · survives sleep"
+        case .publicWeb: return "Anyone with the link · no Tailscale · 1 hour"
+        }
+    }
+
+    var isPublic: Bool { self == .publicWeb }
 }
 
 // MARK: - tnshare bridge
@@ -88,7 +103,13 @@ enum Tnshare {
     }
 
     static func add(paths: [String], to destination: Destination) throws -> [String] {
-        let args = destination == .hosted ? ["hosted"] + paths : ["add"] + paths
+        let flag: [String]
+        switch destination {
+        case .local: flag = []
+        case .hosted: flag = ["--hosted"]
+        case .publicWeb: flag = ["--public"]
+        }
+        let args = ["add"] + flag + paths
         let output = try run(args)
         return output.split(separator: "\n")
             .map(String.init)
@@ -142,6 +163,10 @@ final class Store: ObservableObject {
 
     func share(paths: [String]) {
         guard !paths.isEmpty else { return }
+        if destination.isPublic, !confirmPublic(paths: paths) {
+            status = "Public share cancelled."
+            return
+        }
         busy = true
         let destination = self.destination
         let noun = paths.count == 1 ? (paths[0] as NSString).lastPathComponent : "\(paths.count) items"
@@ -170,6 +195,27 @@ final class Store: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Public means the public internet, so make it a deliberate act every time.
+    private func confirmPublic(paths: [String]) -> Bool {
+        let names = paths.map { ($0 as NSString).lastPathComponent }
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Publish to the open internet?"
+        alert.informativeText = """
+        \(names.joined(separator: ", "))
+
+        Anyone who has the link can download this — no Tailscale needed. The random \
+        token in the URL is the only thing protecting it, and links can be forwarded.
+
+        The share expires in 1 hour, or when you revoke it.
+        """
+        alert.addButton(withTitle: "Publish Publicly")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func copy(_ string: String) {
@@ -204,7 +250,7 @@ struct DropZone: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(targeted ? Color.accentColor.opacity(0.12) : Color.clear)
             )
-            .frame(height: 104)
+            .frame(height: 112)
             .overlay {
                 VStack(spacing: 6) {
                     Image(systemName: store.busy ? "arrow.triangle.2.circlepath" : "arrow.down.doc")
@@ -214,9 +260,9 @@ struct DropZone: View {
                         .font(.callout)
                     Text(store.destination.blurb)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(store.destination.isPublic ? Color.orange : Color.secondary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 18)
+                        .padding(.horizontal, 14)
                 }
             }
             .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
@@ -262,15 +308,16 @@ struct ShareRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: share.isHosted ? "cloud" : "desktopcomputer")
-                .foregroundStyle(.secondary)
+            Image(systemName: share.isPublic ? "globe"
+                              : share.isHosted ? "cloud" : "desktopcomputer")
+                .foregroundStyle(share.isPublic ? Color.orange : Color.secondary)
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(share.name).font(.callout).lineLimit(1).truncationMode(.middle)
-                Text("\(share.isHosted ? share.host : "this Mac") · \(share.timeLeft(now: now))")
+                Text("\(share.isPublic ? "public internet" : share.isHosted ? share.host : "this Mac") · \(share.timeLeft(now: now))")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(share.isPublic ? Color.orange : Color.secondary)
             }
 
             Spacer(minLength: 4)

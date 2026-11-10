@@ -6,16 +6,35 @@ expire on their own, and the store never grows past 5 GB.
 Three ways in: the **TailDrop** app (a floating drop target with the live link list), the Finder
 Quick Action, or `tnshare` on the command line.
 
-## Two destinations
+## Three exposures
 
-| | `This Mac` (local) | `ovh1` (hosted) |
-|---|---|---|
-| Upload | none — clones the file locally | copies the file to ovh1 |
-| Works while the Mac sleeps | no | yes |
-| Who can download | only peers your ACL lets into this Mac | anyone the ACL lets into ovh1 |
+| | `This Mac` | `Team` | `Public` |
+|---|---|---|---|
+| Who can download | your own devices | your tailnet | anyone with the link |
+| Upload | none — clones locally | to the server | to the server |
+| Survives this Mac sleeping | no | yes | yes |
+| Default life | 24h | 24h | **1h** |
+| Published with | `serve`, loopback proxy | `serve`, path | `funnel`, path |
 
-Local is instant and private. Hosted survives sleep and reaches people your Mac's ACL blocks —
-which, on this tailnet, is every contractor. `tnshare doctor` prints exactly who is on each side.
+`This Mac` is instant and private, but only peers the tailnet ACL admits can connect —
+`tnshare doctor` names who is on each side. `Team` covers everyone on the tailnet. `Public`
+leaves the tailnet entirely.
+
+### About Public
+
+Funnel is **per path**: only the token you publish goes to the internet, and every other path on
+the server stays tailnet-only. The token URL points at the file itself, never a directory, so there
+is no listing to browse — 96 bits of entropy is the whole protection, and a link that gets forwarded
+is a link that works.
+
+It must be asked for by name (`--public`, or the Public tab, which confirms first). It is never
+implied by any other flag.
+
+Two things gate it, both outside this tool:
+
+- Tailscale must allow Funnel on the node — the `funnel` nodeAttr in the tailnet policy.
+- **Funnel is not on the Starter plan.** `tailscale funnel` exits 0 while refusing, so the server
+  reads the serve config back and fails loudly rather than handing you a link that 404s.
 
 ## How it works
 

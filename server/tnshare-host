@@ -11,15 +11,55 @@ TS=/usr/bin/tailscale
 
 die() { echo "tnshare-host: $*" >&2; exit 1; }
 
+# True only when the path is really exposed to the internet: the route exists
+# and Funnel is switched on for that host.
+funnel_live() {
+  "$TS" serve status --json 2>/dev/null | python3 -c '
+import json, sys
+want = sys.argv[1]
+try:
+    cfg = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+allowed = cfg.get("AllowFunnel") or {}
+for host, web in (cfg.get("Web") or {}).items():
+    if want in (web.get("Handlers") or {}) and allowed.get(host):
+        sys.exit(0)
+sys.exit(1)
+' "$1"
+}
+
 cmd_publish() {
-  local token="${1:?token}" name="${2:?name}" ttl="${3:-86400}"
+  local token="${1:?token}" name="${2:?name}" ttl="${3:-86400}" exposure="${4:-tailnet}"
   [[ "$token" =~ ^[0-9a-f]{8,64}$ ]] || die "bad token"
+  [[ "$exposure" == tailnet || "$exposure" == public ]] || die "bad exposure"
   local dir="$ROOT/$token"
   [[ -f "$dir/$name" || -d "$dir/$name" ]] || die "nothing uploaded at $dir/$name"
 
   chown -R root:root "$dir"
   chmod -R go-w "$dir"
-  "$TS" serve --bg --set-path="/$token" "$dir" >/dev/null || die "serve failed"
+
+  # Point the path at the file itself, so the token URL serves exactly one file
+  # and never a browsable listing. Directories keep a trailing slash.
+  local target="$dir/$name" path="/$token/$name"
+  [[ -d "$target" ]] && path="$path/"
+
+  if [[ "$exposure" == public ]]; then
+    # Funnel is per-path: only this token goes to the public internet, and the
+    # token is then the only thing between the file and whoever has the URL.
+    #
+    # `tailscale funnel` exits 0 even when it refuses (unavailable plan, missing
+    # nodeAttr), so never trust the status: read back what is actually serving.
+    local output
+    output="$("$TS" funnel --bg --set-path="$path" "$target" 2>&1)" || true
+    if ! funnel_live "$path"; then
+      cmd_expire "$token" >/dev/null 2>&1 || true
+      die "public share refused by Tailscale: ${output:-no funnel route was created}"
+    fi
+  else
+    "$TS" serve --bg --set-path="$path" "$target" >/dev/null || die "serve failed"
+    serve_paths_for "$token" | grep -qz . || die "serve created no route for $path"
+  fi
 
   if [[ "$ttl" -gt 0 ]]; then
     systemd-run --quiet --on-active="${ttl}s" --unit="tnshare-$token" \
@@ -29,12 +69,40 @@ cmd_publish() {
   echo "published $token"
 }
 
+# Every path registered under this token, whatever the file inside was named.
+# Names contain spaces, so read them as NUL-delimited records, not words.
+serve_paths_for() {
+  "$TS" serve status --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    cfg = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+prefix = "/" + sys.argv[1] + "/"
+seen = set()
+for host in (cfg.get("Web") or {}).values():
+    for path in (host.get("Handlers") or {}):
+        if path == prefix.rstrip("/") or path.startswith(prefix):
+            seen.add(path)
+for path in sorted(seen):
+    sys.stdout.write(path + "\0")
+' "$1"
+}
+
 cmd_expire() {
   local token="${1:?token}"
   [[ "$token" =~ ^[0-9a-f]{8,64}$ ]] || die "bad token"
-  # Serve records the path with a trailing slash for directories, so try both.
-  "$TS" serve --set-path="/$token" off >/dev/null 2>&1 || true
-  "$TS" serve --set-path="/$token/" off >/dev/null 2>&1 || true
+
+  local paths=("/$token" "/$token/")
+  while IFS= read -r -d '' path; do
+    [[ -n "$path" ]] && paths+=("$path")
+  done < <(serve_paths_for "$token")
+
+  for path in "${paths[@]}"; do
+    "$TS" funnel --set-path="$path" off >/dev/null 2>&1 || true
+    "$TS" serve --set-path="$path" off >/dev/null 2>&1 || true
+  done
+
   rm -rf "${ROOT:?}/$token"
   systemctl stop "tnshare-$token.timer" >/dev/null 2>&1 || true
 }
@@ -66,5 +134,5 @@ case "${1:-}" in
   expire) shift; cmd_expire "$@" ;;
   list) cmd_list ;;
   stop-all) cmd_stop_all ;;
-  *) echo "usage: tnshare-host {publish TOKEN NAME [TTL]|expire TOKEN|list|stop-all}" >&2; exit 2 ;;
+  *) echo "usage: tnshare-host {publish TOKEN NAME [TTL] [tailnet|public]|expire TOKEN|list|stop-all}" >&2; exit 2 ;;
 esac
