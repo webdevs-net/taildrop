@@ -318,6 +318,14 @@ cmd_stop() {
 }
 
 cmd_stop_all() {
+  # Hosted shares live on the server, so they need revoking there too — not
+  # just forgetting about locally.
+  if [[ -d "$HOSTED" ]]; then
+    for dir in "$HOSTED"/*/; do
+      [[ -d "$dir" ]] || continue
+      cmd_stop "$(basename "$dir")"
+    done
+  fi
   rm -rf "${SHARES:?}"/*
   "$TS" serve --https="$HTTPS_PORT" off >/dev/null 2>&1 || true
 }
