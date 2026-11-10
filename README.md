@@ -72,7 +72,7 @@ a contractor with no Tailscale at their end.
 
 **The app** — a small floating window. Drag files in, see what's live, copy or revoke with a click.
 
-**Finder** — right-click any file → Quick Actions → Send by Tailnet. The link lands on your
+**Finder** — right-click any file → Quick Actions → Send with TailDrop. The link lands on your
 clipboard and a notification confirms it.
 
 **The terminal**
