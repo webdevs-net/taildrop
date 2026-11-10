@@ -1,125 +1,165 @@
-# TailDrop
+<div align="center">
+  <img src="assets/logo-i-drop-corner.svg" width="88" alt="TailDrop">
+  <h1>TailDrop</h1>
+  <p><strong>Send big files to your tailnet in one drag.</strong><br>
+  No upload to a cloud you don't own. No 25 MB attachment limit. No "I'll WeTransfer it over."</p>
+</div>
 
-Drag a file in, get a link anyone on your tailnet can download. Nothing leaves the tailnet, links
-expire on their own, and the store never grows past 5 GB.
+<p align="center">
+  <img src="assets/screenshots/taildrop-team.png" width="440" alt="TailDrop sharing to the tailnet">
+</p>
 
-Three ways in: the **TailDrop** app (a floating drop target with the live link list), the Finder
-Quick Action, or `tnshare` on the command line.
+Drag a file onto TailDrop. You get a link back, already on your clipboard. Anyone on your tailnet
+opens it and the download starts — at whatever speed your Tailscale connection runs, straight from
+the machine holding the file.
 
-## Three exposures
+A 4 GB video goes out as easily as a 40 KB PDF: nothing is re-encoded, nothing is staged through
+anyone else's service, and nothing counts against a quota.
 
-| | `This Mac` | `Team` | `Public` |
+## Why it exists
+
+Sharing a large file with your own team is stupidly hard. Email bounces it. Slack compresses it or
+refuses it. Drive wants everyone signed into the right account. A USB stick means someone walks.
+Meanwhile you already have a private network with every machine and teammate on it — the file could
+simply move.
+
+That is the whole idea: **your tailnet is already the file-sharing network.** TailDrop is the
+plumbing that turns it into a link.
+
+## Three levels of reach
+
+Pick how far each file travels. The tab you choose decides who can open the link.
+
+| | **This Mac** | **Team** | **Public** |
 |---|---|---|---|
-| Who can download | your own devices | your tailnet | anyone with the link |
-| Upload | none — clones locally | to the server | to the server |
-| Survives this Mac sleeping | no | yes | yes |
-| Default life | 24h | 24h | **1h** |
-| Published with | `serve`, loopback proxy | `serve`, path | `funnel`, path |
+| Who can open it | your own devices | anyone on your tailnet | anyone with the link |
+| Upload | none — stays put | to your server | to your server |
+| Works while the Mac sleeps | no | yes | yes |
+| Link expires | 24 h | 24 h | 1 h |
 
-`This Mac` is instant and private, but only peers the tailnet ACL admits can connect —
-`tnshare doctor` names who is on each side. `Team` covers everyone on the tailnet. `Public`
-leaves the tailnet entirely.
+**This Mac** is the fastest path: the file never moves, and the link serves straight off your disk.
+Ideal for a teammate on the same tailnet while your Mac is awake.
 
-### About Public
+**Team** copies the file to a Linux node you own and serves it from there, so the link keeps working
+after your laptop closes. This is also the one that reaches people whose ACL doesn't admit them to
+your Mac — most tailnets are stricter than their owners remember. `tnshare doctor` prints exactly
+who is on each side.
 
-Funnel is **per path**: only the token you publish goes to the internet, and every other path on
-the server stays tailnet-only. The token URL points at the file itself, never a directory, so there
-is no listing to browse — 96 bits of entropy is the whole protection, and a link that gets forwarded
-is a link that works.
+**Public** leaves the tailnet entirely, through Tailscale Funnel: a link you can send to a client or
+a contractor with no Tailscale at their end.
 
-It must be asked for by name (`--public`, or the Public tab, which confirms first). It is never
-implied by any other flag.
+<p align="center">
+  <img src="assets/screenshots/taildrop-public.png" width="440" alt="TailDrop public sharing tab">
+</p>
 
-Two things gate it, both outside this tool:
+> **Public needs a paid Tailscale plan.** Funnel is not available on Starter, and it also needs the
+> `funnel` nodeAttr granted to the serving node. TailDrop verifies both and refuses clearly, rather
+> than handing you a link that quietly 404s.
 
-- Tailscale must allow Funnel on the node — the `funnel` nodeAttr in the tailnet policy.
-- **Funnel is not on the Starter plan.** `tailscale funnel` exits 0 while refusing, so the server
-  reads the serve config back and fails loudly rather than handing you a link that 404s.
+## Built for not leaving a mess
 
-## How it works
+- **Links expire by themselves.** 24 hours by default, one hour for public. No cleanup chore, no
+  files living forever on a server you forgot about.
+- **The store is capped at 5 GB.** Past the ceiling, the oldest shares are revoked to make room and
+  TailDrop says which ones went.
+- **Nothing is really copied.** On APFS the local store uses copy-on-write clones: instant, and
+  near-zero disk until the original changes.
+- **One file per link.** The token URL points at the file itself, so there is no directory to browse
+  and no walking from one share to another.
+- **Revoke anything, anytime.** One click in the app, or `tnshare stop-all`.
 
-Tailscale's macOS GUI build cannot serve files from disk — the sandbox blocks
-`tailscale serve --set-path`. So local shares use proxy mode instead:
+## Three ways to use it
 
-1. A LaunchAgent (`net.webdevs.tnshared`, `bin/tnshared.py`) runs an HTTP server on
-   `127.0.0.1:8731`, unreachable from any network.
-2. `tailscale serve --bg --https=8443 http://127.0.0.1:8731` publishes it at
-   `https://<this-mac>.<tailnet>.ts.net:8443/` — tailnet only, real TLS cert.
-3. `tnshare add FILE` clones the file into the share store under a random 24-hex token. On APFS the
-   clone is copy-on-write: instant, no extra disk, and it keeps the daemon out of TCC-protected
-   folders (Desktop, Documents, Downloads) that a LaunchAgent cannot read.
+**The app** — a small floating window. Drag files in, see what's live, copy or revoke with a click.
 
-Hosted shares skip all that: the file goes to `ovh1`, which runs real `tailscaled` and can publish a
-path directly. A transient systemd timer deletes it at expiry.
+**Finder** — right-click any file → Quick Actions → Send by Tailnet. The link lands on your
+clipboard and a notification confirms it.
 
-Unknown and expired tokens 404, path traversal is rejected, and `Range` requests work so large
-downloads resume.
-
-## Storage
-
-The local store is capped at 5 GB (`TNSHARE_MAX_BYTES`). Adding a file past the ceiling revokes the
-oldest shares until it fits, and reports which ones went. A single file bigger than the cap is
-refused rather than half-shared. `tnshare du` shows usage — it counts allocated blocks, so APFS
-clones are billed honestly at near zero.
-
-## CLI
+**The terminal**
 
 ```bash
-tnshare add [--ttl SECONDS] [--hosted] FILE...   # share; links are copied to the clipboard
-tnshare hosted FILE...                           # same, forced to ovh1
-tnshare list [--json]                            # live shares and time left
-tnshare doctor                                   # who can reach local links, and the ACL fix
-tnshare du                                       # store usage against the cap
-tnshare stop TOKEN... | stop-all                 # revoke
+tnshare add ~/big.mov             # your own devices
+tnshare hosted ~/big.mov          # the whole tailnet
+tnshare public ~/big.mov          # anyone with the link
+tnshare list                      # what's live, and for how long
+tnshare doctor                    # who can actually reach your links
+tnshare stop-all                  # revoke everything
 ```
 
 ## Install
 
 ```bash
-./install.sh          # daemon, CLI, Finder Quick Actions
-app/build-app.sh      # builds app/build/TailDrop.app
+git clone https://github.com/webdevs-net/taildrop.git && cd taildrop
+./install.sh            # CLI, background service, Finder Quick Actions
+app/build-app.sh        # builds app/build/TailDrop.app
 ```
 
-`install.sh` puts the CLI in `~/Library/Application Support/TailnetShare/bin/`, symlinks it into
-`~/.local/bin`, loads the LaunchAgent, and installs the Quick Actions.
-
-### Hosted server
-
-Install `server/tnshare-host` at `/usr/local/bin/tnshare-host`, then give it a dedicated,
-unprivileged account rather than sharing out root:
+For **Team** and **Public** sharing, point it at a Linux node you can reach over SSH:
 
 ```bash
-useradd --system --home-dir /srv/drop --shell /bin/bash taildrop
-mkdir -p /srv/drop/shares /srv/drop/.ssh
-chown -R taildrop:taildrop /srv/drop/shares /srv/drop/.ssh
-chmod 700 /srv/drop/.ssh
-
-# Restricted key: no port forwarding, agent forwarding, X11 or tunnels.
-printf 'restrict,pty %s\n' "$(cat taildrop_ed25519.pub)" > /srv/drop/.ssh/authorized_keys
-chown taildrop:taildrop /srv/drop/.ssh/authorized_keys && chmod 600 /srv/drop/.ssh/authorized_keys
-
-# The one thing it may do as root.
-printf 'taildrop ALL=(root) NOPASSWD: /usr/local/bin/tnshare-host\n' > /etc/sudoers.d/taildrop
-chmod 440 /etc/sudoers.d/taildrop && visudo -c -f /etc/sudoers.d/taildrop
+mkdir -p ~/.config/taildrop && cp config.example ~/.config/taildrop/config
+chmod 600 ~/.config/taildrop/config && $EDITOR ~/.config/taildrop/config
 ```
 
-The account owns only `/srv/drop/shares`, cannot write anywhere else, and any `sudo` beyond
-`tnshare-host` asks for a password it does not have. Publishing still needs root — Tailscale Serve
-and the expiry timer both do — so it goes through that one helper and nothing else.
+That server runs a dedicated, unprivileged `taildrop` account which owns one directory and may run
+exactly one command as root. Setup is at the bottom of this file.
+
+## How it actually works
+
+Tailscale's macOS build can't serve files from disk — the app sandbox blocks
+`tailscale serve --set-path`. So local shares take a different route:
+
+1. A background service runs a small HTTP server on `127.0.0.1:8731`, reachable from nowhere else.
+2. `tailscale serve` publishes it at `https://<your-mac>.<tailnet>.ts.net:8443/` — tailnet-only,
+   with a real TLS certificate.
+3. Each share gets a random 96-bit token. The file is cloned into the store first, which also keeps
+   the service out of TCC-protected folders like Desktop and Documents that a background agent
+   cannot read.
+
+Hosted and public shares skip all that: the file goes to your Linux node, which runs real
+`tailscaled` and can publish a path directly, with a systemd timer to delete it at expiry.
+
+Unknown and expired tokens 404. Path traversal is rejected. `Range` requests work, so a 4 GB
+download resumes after a dropped connection instead of starting over.
+
+### Hosted server setup
+
+```bash
+scp server/tnshare-host root@yourserver:/usr/local/bin/tnshare-host
+```
+
+```bash
+ssh root@yourserver 'bash -s' <<'EOF'
+useradd --system --home-dir /srv/drop --shell /bin/bash taildrop
+mkdir -p /srv/drop/shares /srv/drop/.ssh && chmod 700 /srv/drop/.ssh
+chown -R taildrop:taildrop /srv/drop/shares /srv/drop/.ssh
+printf 'taildrop ALL=(root) NOPASSWD: /usr/local/bin/tnshare-host\n' > /etc/sudoers.d/taildrop
+chmod 440 /etc/sudoers.d/taildrop && visudo -c -f /etc/sudoers.d/taildrop
+EOF
+```
+
+Add your public key to `/srv/drop/.ssh/authorized_keys` prefixed with `restrict,pty`, so it cannot
+forward ports or open tunnels.
 
 ## Configuration
 
 | Variable | Default |
 |---|---|
-| `TNSHARE_TTL` | `86400` (24h) |
+| `TNSHARE_TTL` | `86400` (24 h) |
+| `TNSHARE_PUBLIC_TTL` | `3600` (1 h) |
 | `TNSHARE_MAX_BYTES` | `5368709120` (5 GiB) |
 | `TNSHARE_PORT` | `8731` (local HTTP) |
 | `TNSHARE_HTTPS_PORT` | `8443` (Serve) |
-| `TNSHARE_HOST_SSH` | the hosted server's SSH target |
+| `TAILDROP_HOST_SSH` | your server's SSH target |
+| `TAILDROP_HOST_KEY` | `~/.ssh/taildrop_ed25519` |
 
-## Limits
+## Requirements
 
-- Local links need this Mac awake, online and running Tailscale. Downloads resume after a wake.
-- Everything is tailnet-only. Reaching people outside it would need `tailscale funnel`, which
-  exposes the file to the public internet and is deliberately not wired up.
-- The clone is taken at share time, so later edits to the original are not published.
+macOS 14+, Tailscale, and — for Team and Public — a Linux node on your tailnet. Public additionally
+needs a paid Tailscale plan.
+
+---
+
+<div align="center">
+  <sub>Built by <a href="https://webdevs.net">WebDevs</a></sub>
+</div>
