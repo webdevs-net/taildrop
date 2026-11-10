@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="TailDrop">
+  <title>TailDrop — the drop is the stem</title>
+  <!-- Proportions taken from Tailscale's own mark: 3x3 at 15/24/33 r=3 on a 48
+       canvas, four dots forming the "t", the rest faded. Scaled to 256. -->
+  <g fill="#1A1A1A">
+    <circle cx="80" cy="128" r="16"/>
+    <circle cx="128" cy="128" r="16"/>
+    <circle cx="176" cy="128" r="16"/>
+  </g>
+  <g fill="#1A1A1A" opacity=".3">
+    <circle cx="80" cy="80" r="16"/>
+    <circle cx="128" cy="80" r="16"/>
+    <circle cx="176" cy="80" r="16"/>
+    <circle cx="80" cy="176" r="16"/>
+    <circle cx="176" cy="176" r="16"/>
+  </g>
+  <path d="M128 140 C128 140 156 170 156 188 A28 28 0 1 1 100 188 C100 170 128 140 128 140 Z" fill="#2F6FED"/>
+</svg>

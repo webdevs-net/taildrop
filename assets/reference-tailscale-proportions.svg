@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="TailDrop">
+  <title>TailDrop — proportion reference</title>
+  <g fill="#1A1A1A">
+    <circle cx="80" cy="128" r="16"/>
+    <circle cx="128" cy="128" r="16"/>
+    <circle cx="176" cy="128" r="16"/>
+    <circle cx="128" cy="176" r="16"/>
+  </g>
+  <g fill="#1A1A1A" opacity=".3">
+    <circle cx="80" cy="80" r="16"/>
+    <circle cx="128" cy="80" r="16"/>
+    <circle cx="176" cy="80" r="16"/>
+    <circle cx="80" cy="176" r="16"/>
+    <circle cx="176" cy="176" r="16"/>
+  </g>
+</svg>

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="TailDrop">
+  <title>TailDrop — drop in front of the grid</title>
+  <!-- The 3x3 node grid behind, the droplet in front. Dots the droplet would
+       clip are left out entirely rather than shaved into slivers, and the gap
+       is the droplet path stroked, so the clear space is even all round. -->
+  <defs>
+    <path id="dropE" d="M128 84 C128 84 162 120 162 142 A34 34 0 1 1 94 142 C94 120 128 84 128 84 Z"/>
+    <mask id="gapE">
+      <rect width="256" height="256" fill="#fff"/>
+      <use href="#dropE" fill="#000" stroke="#000" stroke-width="18" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+
+  <g fill="#1A1A1A" mask="url(#gapE)">
+    <circle cx="56" cy="56" r="17"/>
+    <circle cx="128" cy="56" r="17"/>
+    <circle cx="200" cy="56" r="17"/>
+    <circle cx="56" cy="128" r="17"/>
+    <circle cx="200" cy="128" r="17"/>
+    <circle cx="56" cy="200" r="17"/>
+    <circle cx="128" cy="200" r="17"/>
+    <circle cx="200" cy="200" r="17"/>
+  </g>
+
+  <use href="#dropE" fill="#2F6FED"/>
+</svg>
