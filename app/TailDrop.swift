@@ -103,7 +103,9 @@ enum Tnshare {
 @MainActor
 final class Store: ObservableObject {
     @Published var shares: [Share] = []
-    @Published var destination: Destination = .local {
+    // Hosted by default: local links only reach your own devices, since the
+    // tailnet ACL admits nobody else to this Mac (see `tnshare doctor`).
+    @Published var destination: Destination = .hosted {
         didSet { UserDefaults.standard.set(destination.rawValue, forKey: "destination") }
     }
     @Published var status: String = ""
