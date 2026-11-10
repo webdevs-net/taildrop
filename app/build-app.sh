@@ -8,6 +8,10 @@ BIN="$APP/Contents/MacOS/TailDrop"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
+# Icon and bundled images; regenerated from the SVG marks.
+"$SRC/../assets/make-icons.sh" "$SRC/Resources" >/dev/null
+cp "$SRC/Resources/"* "$APP/Contents/Resources/"
+
 swiftc -O \
   -target arm64-apple-macos14.0 \
   -framework AppKit -framework SwiftUI -framework UniformTypeIdentifiers \
@@ -28,6 +32,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>CFBundleIconFile</key><string>TailDrop</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>CFBundleDocumentTypes</key>
   <array>

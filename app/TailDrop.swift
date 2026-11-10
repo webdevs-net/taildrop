@@ -245,6 +245,41 @@ final class Store: ObservableObject {
 
 // MARK: - Views
 
+/// SwiftUI has no animated-GIF view, so wrap the AppKit one that does.
+struct AnimatedImage: NSViewRepresentable {
+    let name: String
+    let side: CGFloat
+
+    func makeNSView(context: Context) -> NSImageView {
+        let view = NSImageView()
+        view.image = Bundle.main.url(forResource: name, withExtension: "gif")
+            .flatMap { NSImage(contentsOf: $0) }
+        view.imageScaling = .scaleProportionallyUpOrDown
+        view.animates = true
+        view.wantsLayer = true
+        view.layer?.cornerRadius = 3
+        view.layer?.masksToBounds = true
+
+        // An NSImageView reports the image's own size, which would be 44pt here.
+        // Pin it instead, or it elbows the footer apart.
+        view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            view.widthAnchor.constraint(equalToConstant: side),
+            view.heightAnchor.constraint(equalToConstant: side),
+        ])
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentHuggingPriority(.required, for: .vertical)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return view
+    }
+
+    func updateNSView(_ view: NSImageView, context: Context) {}
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSImageView, context: Context) -> CGSize {
+        CGSize(width: side, height: side)
+    }
+}
+
 struct DropZone: View {
     @EnvironmentObject var store: Store
     @State private var targeted = false
@@ -399,7 +434,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 220)
+                .frame(minHeight: 108, maxHeight: 220)
             }
 
             Divider()
@@ -421,8 +456,10 @@ struct ContentView: View {
                 }
             }
 
-            HStack {
+            HStack(spacing: 6) {
                 Spacer()
+                AnimatedImage(name: "webdevs", side: 14)
+                    .frame(width: 14, height: 14)
                 Link("Built by WebDevs", destination: URL(string: "https://webdevs.net")!)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -493,9 +530,17 @@ struct TailDropApp: App {
         }
         .windowResizability(.contentSize)
 
-        MenuBarExtra("TailDrop", systemImage: "paperplane") {
+        MenuBarExtra {
             ContentView()
                 .environmentObject(store)
+        } label: {
+            if let image = Bundle.main.url(forResource: "menubar", withExtension: "png")
+                .flatMap({ NSImage(contentsOf: $0) }) {
+                let _ = image.isTemplate = true
+                Image(nsImage: image)
+            } else {
+                Image(systemName: "paperplane")
+            }
         }
         .menuBarExtraStyle(.window)
     }
