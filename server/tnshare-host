@@ -1,0 +1,69 @@
+#!/bin/bash
+# tnshare-host — server side of hosted tailnet shares.
+#
+# Files land in $ROOT/<token>/ and are published at https://<host>/<token>/<name>
+# via Tailscale Serve path mode (which works here, unlike on macOS). A transient
+# systemd timer removes the share when it expires.
+set -euo pipefail
+
+ROOT=/srv/drop/shares
+TS=/usr/bin/tailscale
+
+die() { echo "tnshare-host: $*" >&2; exit 1; }
+
+cmd_publish() {
+  local token="${1:?token}" name="${2:?name}" ttl="${3:-86400}"
+  [[ "$token" =~ ^[0-9a-f]{8,64}$ ]] || die "bad token"
+  local dir="$ROOT/$token"
+  [[ -f "$dir/$name" || -d "$dir/$name" ]] || die "nothing uploaded at $dir/$name"
+
+  chmod -R go-w "$dir"
+  "$TS" serve --bg --set-path="/$token" "$dir" >/dev/null || die "serve failed"
+
+  if [[ "$ttl" -gt 0 ]]; then
+    systemd-run --quiet --on-active="${ttl}s" --unit="tnshare-$token" \
+      /usr/local/bin/tnshare-host expire "$token" >/dev/null \
+      || die "could not schedule expiry"
+  fi
+  echo "published $token"
+}
+
+cmd_expire() {
+  local token="${1:?token}"
+  [[ "$token" =~ ^[0-9a-f]{8,64}$ ]] || die "bad token"
+  # Serve records the path with a trailing slash for directories, so try both.
+  "$TS" serve --set-path="/$token" off >/dev/null 2>&1 || true
+  "$TS" serve --set-path="/$token/" off >/dev/null 2>&1 || true
+  rm -rf "${ROOT:?}/$token"
+  systemctl stop "tnshare-$token.timer" >/dev/null 2>&1 || true
+}
+
+cmd_list() {
+  [[ -d "$ROOT" ]] || { echo "no shares"; return; }
+  local found=0
+  for dir in "$ROOT"/*/; do
+    [[ -d "$dir" ]] || continue
+    found=1
+    local token; token="$(basename "$dir")"
+    local left; left="$(systemctl show -p AccuracyUSec --value "tnshare-$token.timer" 2>/dev/null >/dev/null && \
+      systemctl list-timers --all "tnshare-$token.timer" --no-legend 2>/dev/null | awk '{print $3, $4}')"
+    printf '%s  %s  %s\n' "$token" "${left:-no expiry}" "$(ls "$dir" | head -1)"
+  done
+  [[ "$found" == 1 ]] || echo "no shares"
+}
+
+cmd_stop_all() {
+  [[ -d "$ROOT" ]] || return 0
+  for dir in "$ROOT"/*/; do
+    [[ -d "$dir" ]] || continue
+    cmd_expire "$(basename "$dir")"
+  done
+}
+
+case "${1:-}" in
+  publish) shift; cmd_publish "$@" ;;
+  expire) shift; cmd_expire "$@" ;;
+  list) cmd_list ;;
+  stop-all) cmd_stop_all ;;
+  *) echo "usage: tnshare-host {publish TOKEN NAME [TTL]|expire TOKEN|list|stop-all}" >&2; exit 2 ;;
+esac

@@ -1,0 +1,4 @@
+# Copy to ~/.config/taildrop/config
+# The Linux tailnet node that serves hosted shares, and how to reach it over ssh.
+TAILDROP_HOST=ovh1
+TAILDROP_HOST_SSH=root@ovh1.example.ts.net

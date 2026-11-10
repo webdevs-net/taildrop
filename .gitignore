@@ -1,0 +1,22 @@
+# Build output
+app/build/
+
+# Local configuration — holds the hosted server's address and ssh target
+config
+*.local
+.env
+.env.*
+
+# Credentials of any kind
+*.pem
+*.key
+*.p12
+*.keychain
+id_rsa*
+id_ed25519*
+*_token
+*.secret
+
+# Runtime noise
+*.log
+.DS_Store

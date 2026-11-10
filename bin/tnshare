@@ -1,0 +1,337 @@
+#!/bin/bash
+# tnshare — share files over your tailnet with an expiring HTTPS link.
+set -euo pipefail
+
+TS=/Applications/Tailscale.app/Contents/MacOS/tailscale
+ROOT="$HOME/Library/Application Support/TailnetShare"
+SHARES="$ROOT/shares"
+PORT="${TNSHARE_PORT:-8731}"
+HTTPS_PORT="${TNSHARE_HTTPS_PORT:-8443}"
+DEFAULT_TTL="${TNSHARE_TTL:-86400}"   # 24 hours
+MAX_BYTES="${TNSHARE_MAX_BYTES:-5368709120}"   # 5 GiB ceiling for the share store
+# Hosted shares need a Linux tailnet node you can ssh into. Keep the address out
+# of the repo: set it in ~/.config/taildrop/config or the environment.
+[[ -f "$HOME/.config/taildrop/config" ]] && . "$HOME/.config/taildrop/config"
+HOST_NODE="${TNSHARE_HOST:-${TAILDROP_HOST:-}}"
+HOST_SSH="${TNSHARE_HOST_SSH:-${TAILDROP_HOST_SSH:-}}"
+HOST_ROOT=/srv/drop/shares
+HOSTED="$ROOT/hosted"
+LABEL=net.webdevs.tnshared
+
+mkdir -p "$SHARES" "$HOSTED"
+
+die() { echo "tnshare: $*" >&2; exit 1; }
+
+node_host() {
+  "$TS" status --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))'
+}
+
+ensure_serving() {
+  launchctl kickstart -k "gui/$UID/$LABEL" >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do
+    nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1 && break
+    sleep 0.25
+  done
+  nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1 || die "local share server not running (launchctl load $LABEL)"
+  if ! "$TS" serve status 2>/dev/null | grep -q "127.0.0.1:$PORT"; then
+    "$TS" serve --bg --https="$HTTPS_PORT" "http://127.0.0.1:$PORT" >/dev/null \
+      || die "tailscale serve failed"
+  fi
+}
+
+# Keep the share store under MAX_BYTES by dropping the oldest shares first.
+# The share just created ($keep) is never evicted; if it alone blows the cap,
+# it is removed and the command fails, so we never silently half-share a file.
+enforce_cap() {
+  local keep="${1:-}"
+  python3 - "$SHARES" "$MAX_BYTES" "$keep" <<'PY'
+import json, os, shutil, sys
+
+shares, cap, keep = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+
+def usage(path):
+    if os.path.islink(path):
+        return 0
+    if os.path.isfile(path):
+        return os.stat(path).st_blocks * 512
+    total = 0
+    for root, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.stat(os.path.join(root, name)).st_blocks * 512
+            except OSError:
+                pass
+    return total
+
+entries = []
+for token in os.listdir(shares) if os.path.isdir(shares) else []:
+    d = os.path.join(shares, token)
+    if not os.path.isdir(d):
+        continue
+    try:
+        created = json.load(open(os.path.join(d, "meta.json"))).get("created", 0)
+    except Exception:
+        created = 0
+    entries.append((created, token, d, usage(d)))
+
+total = sum(e[3] for e in entries)
+if total <= cap:
+    sys.exit(0)
+
+kept = next((e for e in entries if e[1] == keep), None)
+if kept and kept[3] > cap:
+    shutil.rmtree(kept[2], ignore_errors=True)
+    sys.stderr.write(
+        "tnshare: %.1f GB exceeds the %.1f GB share limit on its own\n"
+        % (kept[3] / 2**30, cap / 2**30))
+    sys.exit(3)
+
+evicted = []
+for created, token, path, size in sorted(entries):
+    if total <= cap:
+        break
+    if token == keep:
+        continue
+    shutil.rmtree(path, ignore_errors=True)
+    total -= size
+    evicted.append(token)
+
+if evicted:
+    sys.stderr.write("tnshare: store over %.1f GB, revoked %d older share(s): %s\n"
+                     % (cap / 2**30, len(evicted), " ".join(t[:8] for t in evicted)))
+PY
+  local status=$?
+  [[ "$status" == 3 ]] && die "file is larger than the share store limit"
+  return 0
+}
+
+cmd_add() {
+  local ttl="$DEFAULT_TTL" hosted=0
+  while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+      --ttl) ttl="$2"; shift 2 ;;
+      --hosted) hosted=1; shift ;;
+      *) die "unknown option $1" ;;
+    esac
+  done
+  [[ $# -ge 1 ]] || die "usage: tnshare add [--ttl SECONDS] [--hosted] FILE..."
+  [[ "$hosted" == 1 ]] && { cmd_add_hosted "$ttl" "$@"; return; }
+
+  ensure_serving
+  local host; host="$(node_host)"
+  local urls=()
+
+  for src in "$@"; do
+    [[ -e "$src" ]] || die "no such file: $src"
+    local abs token dir name
+    abs="$(cd "$(dirname "$src")" && pwd)/$(basename "$src")"
+    name="$(basename "$abs")"
+    token="$(openssl rand -hex 12)"
+    dir="$SHARES/$token"
+    mkdir -p "$dir"
+
+    # Clone the item into the share directory. On APFS this is copy-on-write:
+    # instant and no extra disk. It also keeps the daemon out of TCC-protected
+    # folders (Desktop, Documents, Downloads), which it cannot read, and makes
+    # the link survive the original being moved or deleted.
+    if ! cp -cR "$abs" "$dir/data" 2>/dev/null; then
+      cp -R "$abs" "$dir/data" || die "could not copy $src into the share"
+    fi
+    enforce_cap "$token"
+    python3 - "$dir/meta.json" "$dir/data" "$name" "$ttl" <<'PY'
+import json, sys, time
+meta_path, path, name, ttl = sys.argv[1:5]
+ttl = int(ttl)
+json.dump({"path": path, "name": name, "created": time.time(),
+           "expires": (time.time() + ttl) if ttl > 0 else 0},
+          open(meta_path, "w"))
+PY
+    if [[ -d "$dir/data" ]]; then
+      urls+=("https://$host:$HTTPS_PORT/$token/")
+    else
+      urls+=("https://$host:$HTTPS_PORT/$token/$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$name")")
+    fi
+  done
+
+  printf '%s\n' "${urls[@]}"
+  printf '%s\n' "${urls[@]}" | pbcopy
+}
+
+# Hosted shares live on a Linux tailnet node, so the link keeps working while
+# this Mac is asleep or offline. That node runs real tailscaled, where Tailscale
+# Serve can publish a path directly.
+cmd_add_hosted() {
+  local ttl="$1"; shift
+  [[ -n "$HOST_SSH" ]] || die "hosted sharing needs TAILDROP_HOST_SSH in ~/.config/taildrop/config (see config.example)"
+  local host_dns urls=()
+  host_dns="$(ssh -o ConnectTimeout=10 "$HOST_SSH" \
+    'tailscale status --json | python3 -c "import json,sys;print(json.load(sys.stdin)[\"Self\"][\"DNSName\"].rstrip(\".\"))"')" \
+    || die "cannot reach $HOST_NODE over ssh"
+
+  for src in "$@"; do
+    [[ -e "$src" ]] || die "no such file: $src"
+    local abs name token
+    abs="$(cd "$(dirname "$src")" && pwd)/$(basename "$src")"
+    name="$(basename "$abs")"
+    token="$(openssl rand -hex 12)"
+
+    ssh -o ConnectTimeout=10 "$HOST_SSH" "mkdir -p '$HOST_ROOT/$token'" \
+      || die "could not create remote share dir"
+    echo "uploading $name to $HOST_NODE..." >&2
+    scp -q -r "$abs" "$HOST_SSH:$HOST_ROOT/$token/" || die "upload failed"
+    ssh -o ConnectTimeout=10 "$HOST_SSH" \
+      "tnshare-host publish '$token' '$name' '$ttl'" >/dev/null \
+      || die "remote publish failed"
+
+    local url
+    url="https://$host_dns/$token/$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$name")"
+    mkdir -p "$HOSTED/$token"
+    python3 - "$HOSTED/$token/meta.json" "$name" "$url" "$ttl" "$HOST_NODE" <<'PY'
+import json, sys, time
+meta_path, name, url, ttl, host = sys.argv[1:6]
+ttl = int(ttl)
+json.dump({"name": name, "url": url, "host": host, "created": time.time(),
+           "expires": (time.time() + ttl) if ttl > 0 else 0},
+          open(meta_path, "w"))
+PY
+    urls+=("$url")
+  done
+
+  printf '%s\n' "${urls[@]}"
+  printf '%s\n' "${urls[@]}" | pbcopy
+}
+
+cmd_list() {
+  local fmt=text
+  [[ "${1:-}" == "--json" ]] && fmt=json
+  python3 - "$SHARES" "$(node_host)" "$HTTPS_PORT" "$HOSTED" "$fmt" <<'PY'
+import json, os, sys, time, urllib.parse
+shares, host, port, hosted, fmt = sys.argv[1:6]
+
+def scan(root, kind):
+    out = []
+    for token in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        try:
+            meta = json.load(open(os.path.join(root, token, "meta.json")))
+        except Exception:
+            continue
+        name = meta.get("name", "")
+        url = meta.get("url") or "https://%s:%s/%s/%s" % (
+            host, port, token, urllib.parse.quote(name))
+        out.append({"token": token, "name": name, "url": url, "kind": kind,
+                    "host": meta.get("host", "this Mac"),
+                    "expires": meta.get("expires") or 0})
+    return out
+
+rows = scan(shares, "local") + scan(hosted, "hosted")
+rows.sort(key=lambda r: r["expires"] or 1e18)
+
+if fmt == "json":
+    print(json.dumps(rows))
+else:
+    if not rows:
+        print("no shares")
+    for r in rows:
+        exp = r["expires"]
+        left = ("never" if not exp else "EXPIRED" if exp < time.time()
+                else "%dh%dm" % divmod(int((exp - time.time()) // 60), 60))
+        print("%s  %-8s  %-10s  %s" % (r["token"], r["kind"], left, r["url"]))
+PY
+}
+
+# Local links are only reachable by peers the tailnet ACL lets into this Mac.
+# That is invisible from the sharing side, so spell it out.
+cmd_doctor() {
+  "$TS" status --json > /tmp/.tnshare-status.$$ 2>/dev/null || die "tailscale not running"
+  "$TS" debug netmap 2>/dev/null > /tmp/.tnshare-netmap.$$ || true
+  python3 - /tmp/.tnshare-status.$$ /tmp/.tnshare-netmap.$$ "$HTTPS_PORT" <<'PY'
+import ipaddress, json, sys
+
+status = json.load(open(sys.argv[1]))
+try:
+    netmap = json.load(open(sys.argv[2]))
+except Exception:
+    netmap = {}
+port = int(sys.argv[3])
+
+self_ips = {a.split("/")[0] for a in (status["Self"].get("TailscaleIPs") or [])}
+
+allowed = set()
+for rule in netmap.get("PacketFilter") or []:
+    dsts = rule.get("Dsts") or []
+    hits_me = not dsts or any(
+        ipaddress.ip_address(ip) in ipaddress.ip_network(d["Net"])
+        and d["Ports"]["First"] <= port <= d["Ports"]["Last"]
+        for d in dsts for ip in self_ips
+        if ipaddress.ip_address(ip).version == ipaddress.ip_network(d["Net"]).version)
+    if hits_me:
+        allowed.update(s.split("/")[0] for s in (rule.get("Srcs") or []))
+
+yes, no = [], []
+for peer in (status.get("Peer") or {}).values():
+    ips = {a for a in (peer.get("TailscaleIPs") or [])}
+    name = peer.get("HostName") or peer.get("DNSName", "?")
+    (yes if ips & allowed else no).append((name, sorted(ips)[0] if ips else "?"))
+
+print("Links served from this Mac on port %d:\n" % port)
+for name, ip in sorted(yes):
+    print("  reachable   %-28s %s" % (name, ip))
+for name, ip in sorted(no):
+    print("  BLOCKED     %-28s %s" % (name, ip))
+
+if no:
+    print("\nBlocked devices cannot load a local link no matter what — the tailnet ACL")
+    print("drops the packets. Either share with 'tnshare hosted' (served from ovh1),")
+    print("or add a grant at https://login.tailscale.com/admin/acls :\n")
+    print(json.dumps({"src": ["<their-login-or-tag>"],
+                      "dst": [status["Self"].get("HostName", "this-mac")],
+                      "ip": [str(port)]}, indent=2))
+PY
+  rm -f /tmp/.tnshare-status.$$ /tmp/.tnshare-netmap.$$
+}
+
+cmd_stop() {
+  [[ $# -ge 1 ]] || die "usage: tnshare stop TOKEN..."
+  for t in "$@"; do
+    if [[ -d "$HOSTED/$t" ]]; then
+      ssh -o ConnectTimeout=10 "$HOST_SSH" "tnshare-host expire '$t'" >/dev/null 2>&1 \
+        || echo "tnshare: could not reach $HOST_NODE; local record removed only" >&2
+      rm -rf "${HOSTED:?}/$t"
+    fi
+    rm -rf "${SHARES:?}/$t"
+  done
+}
+
+cmd_stop_all() {
+  rm -rf "${SHARES:?}"/*
+  "$TS" serve --https="$HTTPS_PORT" off >/dev/null 2>&1 || true
+}
+
+case "${1:-}" in
+  add) shift; cmd_add "$@" ;;
+  list) shift; cmd_list "$@" ;;
+  doctor) cmd_doctor ;;
+  du) python3 - "$SHARES" "$MAX_BYTES" <<'PY'
+import os, sys
+shares, cap = sys.argv[1], int(sys.argv[2])
+total = 0
+for root, _, files in os.walk(shares):
+    for name in files:
+        try:
+            total += os.stat(os.path.join(root, name)).st_blocks * 512
+        except OSError:
+            pass
+print("%.2f GB of %.1f GB used (%.0f%%)" % (
+    total / 2**30, cap / 2**30, 100 * total / cap if cap else 0))
+PY
+    ;;
+  stop) shift; cmd_stop "$@" ;;
+  stop-all) cmd_stop_all ;;
+  url) shift; cmd_add "$@" ;;
+  hosted) shift; cmd_add_hosted "$DEFAULT_TTL" "$@" ;;
+  hosted-list) ssh -o ConnectTimeout=10 "$HOST_SSH" "tnshare-host list" ;;
+  hosted-stop) shift; for t in "$@"; do ssh -o ConnectTimeout=10 "$HOST_SSH" "tnshare-host expire '$t'"; done ;;
+  hosted-stop-all) ssh -o ConnectTimeout=10 "$HOST_SSH" "tnshare-host stop-all" ;;
+  *) echo "usage: tnshare {add [--ttl S] [--hosted] FILE...|list|stop TOKEN...|stop-all
+                 hosted FILE...|hosted-list|hosted-stop TOKEN...|hosted-stop-all}" >&2; exit 2 ;;
+esac
