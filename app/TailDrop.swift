@@ -101,6 +101,11 @@ enum Tnshare {
         return stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The hosted server's name, as configured locally. Empty when unset.
+    static func hostName() -> String {
+        ((try? run(["host"])) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func list() -> [Share] {
         guard let json = try? run(["list", "--json"]),
               let data = json.data(using: .utf8),
@@ -140,6 +145,7 @@ final class Store: ObservableObject {
     @Published var busy = false
     @Published var tick = Date()
     @Published var storage = ""
+    @Published var hostName = ""
 
     private var timer: Timer?
 
@@ -161,9 +167,11 @@ final class Store: ObservableObject {
         Task.detached(priority: .utility) {
             let shares = Tnshare.list()
             let usage = (try? Tnshare.run(["du"])) ?? ""
+            let host = Tnshare.hostName()
             await MainActor.run {
                 self.shares = shares
                 self.storage = usage
+                self.hostName = host
             }
         }
     }
@@ -177,7 +185,8 @@ final class Store: ObservableObject {
         busy = true
         let destination = self.destination
         let noun = paths.count == 1 ? (paths[0] as NSString).lastPathComponent : "\(paths.count) items"
-        status = destination == .hosted ? "Uploading \(noun) to ovh1…" : "Sharing \(noun)…"
+        let where_ = hostName.isEmpty ? "your server" : hostName
+        status = destination == .local ? "Sharing \(noun)…" : "Uploading \(noun) to \(where_)…"
 
         Task.detached(priority: .userInitiated) {
             do {

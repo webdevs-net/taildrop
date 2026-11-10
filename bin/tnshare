@@ -296,8 +296,8 @@ for name, ip in sorted(no):
 
 if no:
     print("\nBlocked devices cannot load a local link no matter what — the tailnet ACL")
-    print("drops the packets. Either share with 'tnshare hosted' (served from ovh1),")
-    print("or add a grant at https://login.tailscale.com/admin/acls :\n")
+    print("drops the packets. Either share with 'tnshare hosted' (served from your")
+    print("hosted node), or add a grant at https://login.tailscale.com/admin/acls :\n")
     print(json.dumps({"src": ["<their-login-or-tag>"],
                       "dst": [status["Self"].get("HostName", "this-mac")],
                       "ip": [str(port)]}, indent=2))
@@ -334,6 +334,7 @@ case "${1:-}" in
   add) shift; cmd_add "$@" ;;
   list) shift; cmd_list "$@" ;;
   doctor) cmd_doctor ;;
+  host) echo "${HOST_NODE:-}" ;;
   du) python3 - "$SHARES" "$MAX_BYTES" <<'PY'
 import os, sys
 shares, cap = sys.argv[1], int(sys.argv[2])

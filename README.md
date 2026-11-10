@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo-i-drop-corner.svg" width="88" alt="TailDrop">
+  <img src="assets/logo-taildrop.svg" width="88" alt="TailDrop">
   <h1>TailDrop</h1>
   <p><strong>Send big files to your tailnet in one drag.</strong><br>
   No upload to a cloud you don't own. No 25 MB attachment limit. No "I'll WeTransfer it over."</p>
@@ -152,6 +152,12 @@ forward ports or open tunnels.
 | `TNSHARE_HTTPS_PORT` | `8443` (Serve) |
 | `TAILDROP_HOST_SSH` | your server's SSH target |
 | `TAILDROP_HOST_KEY` | `~/.ssh/taildrop_ed25519` |
+
+## Not affiliated with Tailscale
+
+TailDrop is an independent tool that drives the `tailscale` CLI. It is not made, endorsed or
+supported by Tailscale Inc. The mark echoes the shape language of a tailnet — a grid of nodes — but
+is its own design, and "Tailscale" is their trademark, used here only to say what this works with.
 
 ## Requirements
 
